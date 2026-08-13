@@ -2420,6 +2420,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "axum",
+ "c-kzg",
  "chrono",
  "dotenvy",
  "elliptic-curve",

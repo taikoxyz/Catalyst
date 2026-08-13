@@ -20,6 +20,8 @@ alloy-rlp = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
+# Feature-only dependency; see the note in the workspace manifest.
+c-kzg = { workspace = true }
 chrono = { workspace = true }
 dotenvy = { workspace = true }
 elliptic-curve = { workspace = true }
