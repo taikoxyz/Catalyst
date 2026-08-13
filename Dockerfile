@@ -1,5 +1,7 @@
 FROM rust:1.95 AS builder
 
+ARG BLST_PORTABLE=1
+
 # Update CA certificates in builder stage
 RUN apt-get update && apt-get install -y \
     libclang-dev \
