@@ -180,6 +180,11 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY_NAMESPACE }}/${{ matrix.image }}
+          # `latest=auto` (the default) makes `type=ref,event=tag` set the
+          # `latest` flag on every tag push, which would let a patch release cut
+          # from an older line roll `latest` backwards. Pin it off so `latest`
+          # comes only from the explicit `type=raw` rule below.
+          flavor: latest=false
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=tag
