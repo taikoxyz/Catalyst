@@ -1,0 +1,6 @@
+# Self-hosted Actions Runner Controller pools shared with taikoxyz/taiko-mono.
+# actionlint rejects unknown `runs-on` labels unless they are declared here.
+self-hosted-runner:
+  labels:
+    - arc-runner-set
+    - arc-runner-set-arm64

@@ -1,0 +1,59 @@
+name: Setup Rust
+description: >
+  Install the toolchain pinned by rust-toolchain.toml, plus the native build
+  dependencies that the self-hosted ARC runners do not ship. Every step is a
+  no-op when the tool is already present, so this stays correct if the runner
+  image gains them later.
+
+inputs:
+  native-deps:
+    description: >
+      Install the C toolchain and libclang. Required by anything that compiles
+      the workspace (reth's MDBX bindings run bindgen); skip it for jobs that
+      only resolve or format.
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Ensure native build tools
+      if: inputs.native-deps == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        if command -v cc >/dev/null 2>&1 && command -v llvm-config >/dev/null 2>&1; then
+          echo "LIBCLANG_PATH=$(llvm-config --libdir)" >> "$GITHUB_ENV"
+          exit 0
+        fi
+
+        if [ "$(whoami)" = root ]; then SUDO=""; else SUDO="sudo"; fi
+
+        if ! command -v apt-get >/dev/null 2>&1; then
+          echo "ERROR: apt-get is required to install build tools on this runner" >&2
+          exit 1
+        fi
+
+        $SUDO apt-get update
+        $SUDO apt-get install -y build-essential pkg-config clang libclang-dev llvm-dev
+        echo "LIBCLANG_PATH=$(llvm-config --libdir)" >> "$GITHUB_ENV"
+
+    - name: Ensure rustup
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        if command -v rustup >/dev/null 2>&1; then
+          exit 0
+        fi
+
+        # `--default-toolchain none` leaves the channel choice to the `rustup
+        # show` step below, which reads rust-toolchain.toml. Installing one here
+        # would download a toolchain the workspace does not use.
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+          | sh -s -- -y --no-modify-path --default-toolchain none
+        echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+    - name: Install toolchain from rust-toolchain.toml
+      shell: bash
+      run: rustup show

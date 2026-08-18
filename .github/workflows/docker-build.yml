@@ -52,9 +52,9 @@ jobs:
           - name: catalyst-p2p-bootnode
             dockerfile: tools/p2p_boot_node/Dockerfile
         platform:
-          - runner: ubuntu-latest
+          - runner: arc-runner-set
             id: linux/amd64
-          - runner: ubuntu-24.04-arm
+          - runner: arc-runner-set-arm64
             id: linux/arm64
     steps:
       - name: Prepare platform name
@@ -84,6 +84,8 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
+        with:
+          cache-binary: false
 
       - name: Extract image metadata
         id: meta
@@ -119,7 +121,7 @@ jobs:
     name: publish manifest (${{ matrix.image }})
     if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
     needs: publish
-    runs-on: ubuntu-latest
+    runs-on: [arc-runner-set]
     timeout-minutes: 15
     permissions:
       contents: read
@@ -138,6 +140,8 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
+        with:
+          cache-binary: false
 
       - name: Extract image metadata
         id: meta

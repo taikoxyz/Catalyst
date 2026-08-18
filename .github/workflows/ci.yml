@@ -22,28 +22,30 @@ env:
 jobs:
   fmt:
     name: fmt
-    runs-on: ubuntu-latest
+    runs-on: [arc-runner-set]
     timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install Rust toolchain
-        run: rustup show
+      - name: Set up Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          native-deps: "false"
 
       - name: Check formatting
         run: cargo fmt --all -- --check
 
   clippy:
     name: clippy
-    runs-on: ubuntu-latest
+    runs-on: [arc-runner-set]
     timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install Rust toolchain
-        run: rustup show
+      - name: Set up Rust
+        uses: ./.github/actions/setup-rust
 
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@v2
@@ -57,7 +59,7 @@ jobs:
 
   typos:
     name: typos
-    runs-on: ubuntu-latest
+    runs-on: [arc-runner-set]
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -68,14 +70,14 @@ jobs:
 
   test:
     name: test
-    runs-on: ubuntu-latest
+    runs-on: [arc-runner-set]
     timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install Rust toolchain
-        run: rustup show
+      - name: Set up Rust
+        uses: ./.github/actions/setup-rust
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
@@ -91,14 +93,16 @@ jobs:
 
   dependency-audit:
     name: dependency-audit
-    runs-on: ubuntu-latest
+    runs-on: [arc-runner-set]
     timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install Rust toolchain
-        run: rustup show
+      - name: Set up Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          native-deps: "false"
 
       - name: Install cargo-deny
         uses: taiki-e/install-action@v2
