@@ -22,7 +22,15 @@ runs:
       run: |
         set -euo pipefail
 
-        if command -v cc >/dev/null 2>&1 && command -v llvm-config >/dev/null 2>&1; then
+        # Probe every tool this step promises, not just two of them. A runner
+        # image with a compiler and LLVM but no pkg-config or libclang would
+        # otherwise short-circuit here and fail later inside bindgen.
+        missing=0
+        for tool in cc pkg-config clang llvm-config; do
+          command -v "$tool" >/dev/null 2>&1 || missing=1
+        done
+
+        if [ "$missing" -eq 0 ] && [ -d "$(llvm-config --libdir)" ]; then
           echo "LIBCLANG_PATH=$(llvm-config --libdir)" >> "$GITHUB_ENV"
           exit 0
         fi
