@@ -1,5 +1,9 @@
 FROM rust:1.95 AS builder
 
+# Portable (non-ADX) BLS/KZG assembly is selected at compile time by the
+# `c-kzg/portable` feature declared in the workspace manifest, not by a build
+# argument -- `blst` reads a Cargo feature, never a `BLST_PORTABLE` env var.
+
 # Update CA certificates in builder stage
 RUN apt-get update && apt-get install -y \
     libclang-dev \

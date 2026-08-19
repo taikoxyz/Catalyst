@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: fmt
+    runs-on: [arc-runner-set]
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          native-deps: "false"
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  clippy:
+    name: clippy
+    runs-on: [arc-runner-set]
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Rust
+        uses: ./.github/actions/setup-rust
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          shared-key: clippy
+
+      - name: Run Clippy
+        # The standalone P2P tool is outside the maintained main-node scope.
+        run: cargo clippy --workspace --all-features --exclude p2p-boot-node --locked -- -D warnings
+
+  typos:
+    name: typos
+    runs-on: [arc-runner-set]
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install typos
+        uses: taiki-e/install-action@v2
+        with:
+          tool: typos
+
+      - name: Check spelling
+        # `crate-ci/typos` shells out to wget, which the ARC images do not ship.
+        # Install the binary the same way as cargo-deny instead; the CLI reads
+        # _typos.toml on its own, so the action's config plumbing is not needed.
+        run: typos
+
+  test:
+    name: test
+    runs-on: [arc-runner-set]
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Rust
+        uses: ./.github/actions/setup-rust
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          shared-key: tests
+
+      - name: Run tests
+        run: cargo test --workspace --locked --verbose
+
+  dependency-audit:
+    name: dependency-audit
+    runs-on: [arc-runner-set]
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          native-deps: "false"
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      - name: Check dependency policy
+        run: cargo deny check
