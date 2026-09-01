@@ -105,47 +105,68 @@ pub async fn construct_alloy_provider(
     }
 }
 
+#[derive(Debug)]
+enum RpcTransport {
+    Http(reqwest::Url),
+    WebSocket,
+}
+
+fn parse_rpc_transport(url: &str) -> Result<RpcTransport, Error> {
+    let parsed =
+        reqwest::Url::parse(url).map_err(|error| anyhow::anyhow!("Invalid RPC URL: {error}"))?;
+
+    match parsed.scheme() {
+        "http" | "https" => Ok(RpcTransport::Http(parsed)),
+        "ws" | "wss" => Ok(RpcTransport::WebSocket),
+        scheme => Err(anyhow::anyhow!(
+            "Invalid RPC URL scheme '{scheme}', only websocket and http are supported"
+        )),
+    }
+}
+
 async fn create_alloy_provider_with_wallet(
     wallet: EthereumWallet,
     url: &str,
 ) -> Result<DynProvider, Error> {
-    if url.contains("ws://") || url.contains("wss://") {
-        let ws = WsConnect::new(url);
-        Ok(ProviderBuilder::new()
+    match parse_rpc_transport(url)? {
+        RpcTransport::Http(url) => Ok(ProviderBuilder::new()
             .wallet(wallet)
-            .connect_ws(ws.clone())
-            .await
-            .map_err(|e| Error::msg(format!("Execution layer: Failed to connect to WS: {e}")))?
-            .erased())
-    } else if url.contains("http://") || url.contains("https://") {
-        Ok(ProviderBuilder::new()
-            .wallet(wallet)
-            .connect_http(url.parse::<reqwest::Url>()?)
-            .erased())
-    } else {
-        Err(anyhow::anyhow!(
-            "Invalid URL, only websocket and http are supported: {}",
-            url
-        ))
+            .connect_http(url)
+            .erased()),
+        RpcTransport::WebSocket => {
+            let ws = WsConnect::new(url);
+            Ok(ProviderBuilder::new()
+                .wallet(wallet)
+                .connect_ws(ws.clone())
+                .await
+                .map_err(|e| Error::msg(format!("Execution layer: Failed to connect to WS: {e}")))?
+                .erased())
+        }
     }
 }
 
 pub async fn create_alloy_provider_without_wallet(url: &str) -> Result<DynProvider, Error> {
-    if url.contains("ws://") || url.contains("wss://") {
-        let ws = WsConnect::new(url);
-        Ok(ProviderBuilder::new()
-            .connect_ws(ws.clone())
-            .await
-            .map_err(|e| Error::msg(format!("Execution layer: Failed to connect to WS: {e}")))?
-            .erased())
-    } else if url.contains("http://") || url.contains("https://") {
-        Ok(ProviderBuilder::new()
-            .connect_http(url.parse::<reqwest::Url>()?)
-            .erased())
-    } else {
-        Err(anyhow::anyhow!(
-            "Invalid URL, only websocket and http are supported: {}",
-            url
-        ))
+    match parse_rpc_transport(url)? {
+        RpcTransport::Http(url) => Ok(ProviderBuilder::new().connect_http(url).erased()),
+        RpcTransport::WebSocket => {
+            let ws = WsConnect::new(url);
+            Ok(ProviderBuilder::new()
+                .connect_ws(ws.clone())
+                .await
+                .map_err(|e| Error::msg(format!("Execution layer: Failed to connect to WS: {e}")))?
+                .erased())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RpcTransport, parse_rpc_transport};
+
+    #[test]
+    fn http_url_with_websocket_text_in_path_uses_http_transport() {
+        let transport = parse_rpc_transport("https://l2.example/ws://archive").unwrap();
+
+        assert!(matches!(transport, RpcTransport::Http(_)));
     }
 }
