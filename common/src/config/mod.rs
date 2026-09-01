@@ -1,6 +1,7 @@
 mod config_trait;
 pub use config_trait::ConfigTrait;
 
+use crate::shared::alloy_tools::{RpcTransport, parse_rpc_transport};
 use alloy::primitives::Address;
 use anyhow::Error;
 use std::str::FromStr;
@@ -27,6 +28,7 @@ pub struct Config {
     pub preconf_heartbeat_ms: u64,
     // L2
     pub l2_rpc_url: String,
+    pub l2_ws_rpc_url: String,
     pub l2_auth_rpc_url: String,
     pub l2_driver_url: String,
     /// jwt secret file path for L2 EL and L2 driver
@@ -119,6 +121,35 @@ fn get_env_with_deprecation(new_key: &str, deprecated_key: &str) -> Option<Strin
         }
         (None, None) => None,
     }
+}
+
+fn resolve_l2_ws_rpc_url(
+    l2_rpc_url: &str,
+    configured_l2_ws_rpc_url: Option<String>,
+) -> Result<String, Error> {
+    let l2_rpc_transport = parse_rpc_transport("L2_RPC_URL", l2_rpc_url)?;
+
+    let configured_l2_ws_rpc_url = configured_l2_ws_rpc_url.filter(|url| !url.trim().is_empty());
+    if let Some(url) = configured_l2_ws_rpc_url {
+        let parsed = reqwest::Url::parse(&url)
+            .map_err(|error| anyhow::anyhow!("L2_WS_RPC_URL must be a valid URL: {error}"))?;
+        match parsed.scheme() {
+            "ws" | "wss" => return Ok(parsed.to_string()),
+            scheme => {
+                return Err(anyhow::anyhow!(
+                    "L2_WS_RPC_URL must use the ws or wss scheme, got '{scheme}'"
+                ));
+            }
+        }
+    }
+
+    if let RpcTransport::WebSocket(parsed) = l2_rpc_transport {
+        return Ok(parsed.to_string());
+    }
+
+    Err(anyhow::anyhow!(
+        "L2_WS_RPC_URL must be set to a ws:// or wss:// URL when L2_RPC_URL does not use WebSocket"
+    ))
 }
 
 impl Config {
@@ -501,6 +532,9 @@ impl Config {
                 "ws://127.0.0.1:1234".to_string()
             });
 
+        let l2_ws_rpc_url =
+            resolve_l2_ws_rpc_url(&l2_rpc_url, std::env::var("L2_WS_RPC_URL").ok())?;
+
         let l2_auth_rpc_url =
             get_env_with_deprecation("L2_AUTH_RPC_URL", "TAIKO_GETH_AUTH_RPC_URL").unwrap_or_else(
                 || {
@@ -518,6 +552,7 @@ impl Config {
         let config = Self {
             preconfer_address,
             l2_rpc_url,
+            l2_ws_rpc_url,
             l2_auth_rpc_url,
             l2_driver_url,
             catalyst_node_ecdsa_private_key,
@@ -580,6 +615,7 @@ impl Config {
             r#"
 Configuration:{}
 L2 RPC URL: {},
+L2 WebSocket RPC URL: {},
 L2 auth RPC URL: {},
 L2 driver URL: {},
 L1 RPC URL: {},
@@ -636,6 +672,7 @@ internal server port: {}
                 "".to_string()
             },
             config.l2_rpc_url,
+            config.l2_ws_rpc_url,
             config.l2_auth_rpc_url,
             config.l2_driver_url,
             match config.l1_rpc_urls.split_first() {
@@ -695,5 +732,152 @@ internal server port: {}
         );
 
         Ok(config)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_l2_ws_rpc_url;
+
+    #[test]
+    fn explicit_l2_ws_rpc_url_is_used_with_http_rpc() {
+        let resolved = resolve_l2_ws_rpc_url(
+            "http://127.0.0.1:8545",
+            Some("ws://127.0.0.1:8546".to_string()),
+        )
+        .unwrap();
+
+        assert_eq!(resolved, "ws://127.0.0.1:8546/");
+    }
+
+    #[test]
+    fn explicit_l2_ws_rpc_url_trims_surrounding_whitespace() {
+        let resolved = resolve_l2_ws_rpc_url(
+            "http://127.0.0.1:8545",
+            Some("  wss://l2.example  ".to_string()),
+        )
+        .unwrap();
+
+        assert_eq!(resolved, "wss://l2.example/");
+    }
+
+    #[test]
+    fn explicit_l2_ws_rpc_url_uses_canonical_serialization() {
+        let resolved = resolve_l2_ws_rpc_url(
+            "http://127.0.0.1:8545",
+            Some("wss://l2.example/pa th".to_string()),
+        )
+        .unwrap();
+
+        assert_eq!(resolved, "wss://l2.example/pa%20th");
+    }
+
+    #[test]
+    fn legacy_websocket_l2_rpc_url_is_reused() {
+        let resolved = resolve_l2_ws_rpc_url("wss://l2.example", None).unwrap();
+
+        assert_eq!(resolved, "wss://l2.example/");
+    }
+
+    #[test]
+    fn legacy_websocket_l2_rpc_url_trims_surrounding_whitespace() {
+        let resolved = resolve_l2_ws_rpc_url("  wss://l2.example  ", None).unwrap();
+
+        assert_eq!(resolved, "wss://l2.example/");
+    }
+
+    #[test]
+    fn legacy_websocket_l2_rpc_url_uses_canonical_serialization() {
+        let resolved = resolve_l2_ws_rpc_url("wss://l2.example/pa th", None).unwrap();
+
+        assert_eq!(resolved, "wss://l2.example/pa%20th");
+    }
+
+    #[test]
+    fn empty_l2_ws_rpc_url_reuses_legacy_websocket_l2_rpc_url() {
+        let resolved = resolve_l2_ws_rpc_url("wss://l2.example", Some(String::new())).unwrap();
+
+        assert_eq!(resolved, "wss://l2.example/");
+    }
+
+    #[test]
+    fn whitespace_only_l2_ws_rpc_url_reuses_legacy_websocket_l2_rpc_url() {
+        let resolved =
+            resolve_l2_ws_rpc_url("wss://l2.example", Some("  \t  ".to_string())).unwrap();
+
+        assert_eq!(resolved, "wss://l2.example/");
+    }
+
+    #[test]
+    fn http_l2_rpc_url_requires_explicit_websocket_url() {
+        let error = resolve_l2_ws_rpc_url("https://l2.example", None)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("L2_WS_RPC_URL must be set"));
+    }
+
+    #[test]
+    fn malformed_l2_rpc_url_is_rejected_with_explicit_websocket_url() {
+        let error = resolve_l2_ws_rpc_url("not a valid URL", Some("wss://l2.example".to_string()))
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("L2_RPC_URL must be a valid URL"));
+    }
+
+    #[test]
+    fn empty_l2_rpc_url_has_a_specific_error() {
+        let error = resolve_l2_ws_rpc_url("", Some("wss://l2.example".to_string()))
+            .unwrap_err()
+            .to_string();
+
+        assert_eq!(error, "L2_RPC_URL must not be empty");
+    }
+
+    #[test]
+    fn l2_rpc_url_rejects_unsupported_scheme() {
+        let error = resolve_l2_ws_rpc_url("ftp://l2.example", Some("wss://l2.example".to_string()))
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("L2_RPC_URL must use the http, https, ws or wss scheme"));
+    }
+
+    #[test]
+    fn explicit_l2_ws_rpc_url_rejects_non_websocket_scheme() {
+        let error = resolve_l2_ws_rpc_url(
+            "http://127.0.0.1:8545",
+            Some("http://127.0.0.1:8546".to_string()),
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(error.contains("L2_WS_RPC_URL must use the ws or wss scheme"));
+    }
+
+    #[test]
+    fn explicit_l2_ws_rpc_url_rejects_unsupported_scheme_as_websocket_only() {
+        let error = resolve_l2_ws_rpc_url(
+            "http://127.0.0.1:8545",
+            Some("ftp://l2.example".to_string()),
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(
+            error,
+            "L2_WS_RPC_URL must use the ws or wss scheme, got 'ftp'"
+        );
+    }
+
+    #[test]
+    fn explicit_l2_ws_rpc_url_rejects_malformed_url() {
+        let error =
+            resolve_l2_ws_rpc_url("http://127.0.0.1:8545", Some("not a valid URL".to_string()))
+                .unwrap_err()
+                .to_string();
+
+        assert!(error.contains("L2_WS_RPC_URL must be a valid URL"));
     }
 }

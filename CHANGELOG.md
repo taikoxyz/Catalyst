@@ -2,6 +2,13 @@
 
 All notable changes to Catalyst are documented here, organized by release version.
 
+## [Unreleased]
+
+### Features
+- Add `L2_WS_RPC_URL` to split WebSocket subscriptions from ordinary L2 execution RPC requests (#2)
+
+---
+
 ## [v1.41.0] — 2026-06-25
 
 ### Features
