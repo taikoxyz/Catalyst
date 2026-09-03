@@ -20,6 +20,17 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  e2e-harness:
+    name: e2e-harness
+    runs-on: [arc-runner-set]
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Test E2E workflow helpers
+        run: python3 .github/scripts/tests/test_run_shasta_e2e.py -v
+
   fmt:
     name: fmt
     runs-on: [arc-runner-set]

@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+set -uo pipefail
+
+readonly output_dir="${DIAGNOSTICS_OUTPUT_DIR:-../e2e_tests}"
+readonly diagnostics_log="${output_dir}/nethermind-e2e-diagnostics.log"
+readonly services=(
+  catalyst-node-1
+  catalyst-node-2
+  taiko-client-go-1
+  taiko-client-go-2
+  taiko-nethermind-1
+  taiko-nethermind-2
+  web3signer_l1
+  web3signer_l2
+  transfer-funds
+  p2p-bootnode
+)
+
+mkdir -p "$output_dir"
+: > "$diagnostics_log"
+
+capture() {
+  echo "+ $*" | tee -a "$diagnostics_log"
+  "$@" 2>&1 | tee -a "$diagnostics_log"
+  command_status=${PIPESTATUS[0]}
+  if (( command_status != 0 )); then
+    echo "Diagnostic command exited with ${command_status}; continuing" \
+      | tee -a "$diagnostics_log"
+  fi
+}
+
+capture docker ps -a
+capture docker compose ps -a
+capture docker compose logs --no-color --timestamps "${services[@]}"
+
+exit 0

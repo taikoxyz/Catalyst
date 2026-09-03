@@ -44,7 +44,8 @@ jobs:
         with:
           repository: NethermindEth/simple-taiko-node-nethermind
           path: simple-taiko-node-nethermind
-          ref: main
+          # Keep the deployment harness reproducible across Catalyst changes.
+          ref: 841f041fcfe5248351530cda6874f4fc4bc09fcd
           submodules: true
 
       - name: Set up Docker Buildx
@@ -126,23 +127,33 @@ jobs:
             exit 1
           fi
 
-      - name: Wait for L2 node to be ready
+      - name: Wait for L2 RPC endpoints to be ready
         run: |
-          echo "Waiting for L2 node to be ready..."
+          echo "Waiting for both L2 RPC endpoints to be ready..."
           timeout=300
           elapsed=0
           while [ $elapsed -lt $timeout ]; do
-            if curl -s http://localhost:8547 -X POST -H "Content-Type: application/json" \
-              --data '{"jsonrpc":"2.0","id":0,"method":"eth_blockNumber","params":[]}' > /dev/null 2>&1; then
-              echo "L2 node is ready"
+            node1_block=$(curl --fail --silent http://localhost:8547 \
+              -X POST -H "Content-Type: application/json" \
+              --data '{"jsonrpc":"2.0","id":0,"method":"eth_blockNumber","params":[]}' \
+              | jq -r '.result // empty' || true)
+            node2_block=$(curl --fail --silent http://localhost:8647 \
+              -X POST -H "Content-Type: application/json" \
+              --data '{"jsonrpc":"2.0","id":0,"method":"eth_blockNumber","params":[]}' \
+              | jq -r '.result // empty' || true)
+
+            if [[ "$node1_block" =~ ^0x[0-9a-fA-F]+$ ]] && \
+               [[ "$node2_block" =~ ^0x[0-9a-fA-F]+$ ]]; then
+              echo "L2 RPC endpoints are ready (node1=${node1_block}, node2=${node2_block})"
               break
             fi
-            echo "Waiting for L2 node... ($elapsed/$timeout seconds)"
+            echo "Waiting for L2 RPC endpoints... ($elapsed/$timeout seconds)"
             sleep 5
             elapsed=$((elapsed + 5))
           done
           if [ $elapsed -ge $timeout ]; then
-            echo "Warning: Timeout waiting for L2 node, but continuing with tests"
+            echo "Timeout waiting for both L2 RPC endpoints"
+            exit 1
           fi
 
       - name: Wait for L2 nodes p2p connection
@@ -226,19 +237,26 @@ jobs:
         working-directory: ./e2e_tests
         env:
           PYTHONUNBUFFERED: 1
+          SHASTA_SMOKE_TIMEOUT: 20m
         run: |
           cp .env.example.shasta .env
+          trap 'rm -f .env' EXIT
           source .env
-          pytest -v --capture tee-sys -r a --tb=long 2>&1 | tee pytest-shasta.log; exit ${PIPESTATUS[0]}
-          rm .env
+          ../.github/scripts/run-shasta-e2e.sh
 
-      - name: Upload Shasta pytest log file
+      - name: Capture Nethermind E2E diagnostics
+        if: failure()
+        working-directory: simple-taiko-node-nethermind
+        run: ../.github/scripts/capture-nethermind-e2e-diagnostics.sh
+
+      - name: Upload Shasta E2E logs
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: shasta-pytest-logs-nethermind
           path: |
             e2e_tests/pytest-shasta.log
+            e2e_tests/nethermind-e2e-diagnostics.log
           retention-days: 15
           if-no-files-found: warn
 
@@ -249,5 +267,6 @@ jobs:
           ./remove-taiko-full.sh --force
 
       - name: Summary
+        if: always()
         run: |
-          echo "## Shasta E2E tests (Nethermind) completed :green_circle:" >> $GITHUB_STEP_SUMMARY
+          echo "## Shasta E2E tests (Nethermind): ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
