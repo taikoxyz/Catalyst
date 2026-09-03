@@ -11,6 +11,9 @@ if [[ "${RUNNER_OS:?RUNNER_OS must be set}" != "Linux" ]]; then
 fi
 
 case "${RUNNER_ARCH:?RUNNER_ARCH must be set}" in
+  # Refresh these digests with:
+  # gh api repos/rhysd/actionlint/releases/tags/v1.7.12 \
+  #   --jq '.assets[] | select(.name | test("linux_(386|amd64|arm64|armv6)")) | [.name, .digest] | @tsv'
   X64)
     actionlint_arch="amd64"
     expected_sha256="8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
@@ -43,6 +46,8 @@ mkdir -p "$install_dir"
 trap 'rm -f "$archive_path"' EXIT
 
 curl --fail --silent --show-error --location \
+  --retry 3 --retry-delay 2 --retry-max-time 300 \
+  --connect-timeout 10 --max-time 120 \
   --output "$archive_path" "$download_url"
 printf '%s  %s\n' "$expected_sha256" "$archive_path" | sha256sum --check -
 tar -xzf "$archive_path" -C "$install_dir" actionlint

@@ -240,6 +240,7 @@ jobs:
         env:
           PYTHONUNBUFFERED: 1
           SHASTA_SMOKE_TIMEOUT: 20m
+          SHASTA_SUITE_TIMEOUT: 90m
         run: |
           cp .env.example.shasta .env
           trap 'rm -f .env' EXIT
@@ -247,7 +248,7 @@ jobs:
           ../.github/scripts/run-shasta-e2e.sh
 
       - name: Capture Nethermind E2E diagnostics
-        if: failure()
+        if: ${{ failure() || cancelled() }}
         timeout-minutes: 5
         working-directory: simple-taiko-node-nethermind
         run: ../.github/scripts/capture-nethermind-e2e-diagnostics.sh
@@ -272,4 +273,4 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          echo "## Shasta E2E tests (Nethermind): ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "## Shasta E2E tests (Nethermind): ${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"

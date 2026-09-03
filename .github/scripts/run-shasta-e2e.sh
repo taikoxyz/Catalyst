@@ -4,6 +4,7 @@ set -uo pipefail
 
 readonly pytest_log_file="${PYTEST_LOG_FILE:-pytest-shasta.log}"
 readonly smoke_timeout="${SHASTA_SMOKE_TIMEOUT:-20m}"
+readonly suite_timeout="${SHASTA_SUITE_TIMEOUT:-90m}"
 readonly pytest_options=(
   -v
   --capture=tee-sys
@@ -27,7 +28,7 @@ run_and_log() {
   return "${pipeline_status[1]}"
 }
 
-echo "Running Shasta block-production smoke gate"
+echo "Running Shasta block-production smoke gate" | tee -a "$pytest_log_file"
 run_and_log \
   timeout --signal=TERM --kill-after=30s "$smoke_timeout" \
   pytest "${pytest_options[@]}" --maxfail=1 "${smoke_tests[@]}"
@@ -48,5 +49,14 @@ for test_name in "${smoke_tests[@]}"; do
   remaining_test_options+=("--deselect=${test_name}")
 done
 
-run_and_log pytest "${pytest_options[@]}" "${remaining_test_options[@]}"
-exit $?
+run_and_log \
+  timeout --signal=TERM --kill-after=30s "$suite_timeout" \
+  pytest "${pytest_options[@]}" "${remaining_test_options[@]}"
+suite_status=$?
+
+if (( suite_status == 124 )); then
+  echo "Remaining Shasta E2E tests timed out after ${suite_timeout}" \
+    | tee -a "$pytest_log_file"
+fi
+
+exit "$suite_status"
