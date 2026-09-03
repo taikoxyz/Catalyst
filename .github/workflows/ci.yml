@@ -20,6 +20,31 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  e2e-harness:
+    name: e2e-harness
+    runs-on: [arc-runner-set]
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Test E2E workflow helpers
+        run: python3 .github/scripts/tests/test_run_shasta_e2e.py -v
+
+      - name: Install actionlint
+        id: actionlint
+        run: bash .github/scripts/install-actionlint.sh
+
+      - name: Validate GitHub Actions workflows
+        env:
+          ACTIONLINT: ${{ steps.actionlint.outputs.executable }}
+        run: '"$ACTIONLINT" -config-file .github/actionlint.yaml'
+
   fmt:
     name: fmt
     runs-on: [arc-runner-set]
