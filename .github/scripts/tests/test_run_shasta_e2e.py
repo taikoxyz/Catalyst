@@ -10,6 +10,7 @@ RUNNER = REPOSITORY_ROOT / ".github" / "scripts" / "run-shasta-e2e.sh"
 DIAGNOSTICS = (
     REPOSITORY_ROOT / ".github" / "scripts" / "capture-nethermind-e2e-diagnostics.sh"
 )
+INSTALL_ACTIONLINT = REPOSITORY_ROOT / ".github" / "scripts" / "install-actionlint.sh"
 SMOKE_TESTS = (
     "test_avs_node.py::test_rpcs",
     "test_avs_node.py::test_preconfirm_transaction",
@@ -174,6 +175,131 @@ if [[ "$*" == "compose logs"* ]]; then exit 9; fi
             diagnostics = (root / "nethermind-e2e-diagnostics.log").read_text()
             self.assertIn("docker output: ps -a", diagnostics)
             self.assertIn("docker output: compose logs", diagnostics)
+
+
+class InstallActionlintTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.root = Path(self.temp_dir.name)
+        self.bin_dir = self.root / "bin"
+        self.bin_dir.mkdir()
+        self.runner_temp = self.root / "runner-temp"
+        self.github_output = self.root / "github-output"
+        self.curl_calls = self.root / "curl-calls"
+        self.checksum_input = self.root / "checksum-input"
+        self.tar_calls = self.root / "tar-calls"
+
+        self._write_executable(
+            "curl",
+            """#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$CURL_CALLS"
+if [[ "${FAKE_CURL_FAIL:-}" == "1" ]]; then exit 22; fi
+output=""
+while (( $# )); do
+  if [[ "$1" == "--output" ]]; then
+    output="$2"
+    shift 2
+  else
+    shift
+  fi
+done
+printf 'fake release archive' > "$output"
+""",
+        )
+        self._write_executable(
+            "sha256sum",
+            """#!/usr/bin/env bash
+cat > "$CHECKSUM_INPUT"
+if [[ "${FAKE_CHECKSUM_FAIL:-}" == "1" ]]; then exit 19; fi
+""",
+        )
+        self._write_executable(
+            "tar",
+            """#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$TAR_CALLS"
+install_dir=""
+while (( $# )); do
+  if [[ "$1" == "-C" ]]; then
+    install_dir="$2"
+    shift 2
+  else
+    shift
+  fi
+done
+printf '#!/usr/bin/env bash\\nprintf "actionlint 1.7.12\\n"\\n' > "$install_dir/actionlint"
+chmod +x "$install_dir/actionlint"
+""",
+        )
+
+    def _write_executable(self, name, contents):
+        path = self.bin_dir / name
+        path.write_text(contents)
+        path.chmod(0o755)
+
+    def _run(self, *, curl_fails=False, checksum_fails=False):
+        env = os.environ.copy()
+        env.update(
+            {
+                "PATH": f"{self.bin_dir}:{env['PATH']}",
+                "CURL_CALLS": str(self.curl_calls),
+                "CHECKSUM_INPUT": str(self.checksum_input),
+                "TAR_CALLS": str(self.tar_calls),
+                "GITHUB_OUTPUT": str(self.github_output),
+                "RUNNER_ARCH": "X64",
+                "RUNNER_OS": "Linux",
+                "RUNNER_TEMP": str(self.runner_temp),
+            }
+        )
+        if curl_fails:
+            env["FAKE_CURL_FAIL"] = "1"
+        if checksum_fails:
+            env["FAKE_CHECKSUM_FAIL"] = "1"
+
+        return subprocess.run(
+            ["bash", str(INSTALL_ACTIONLINT)],
+            cwd=REPOSITORY_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+
+    def test_installs_a_verified_pinned_release_and_exposes_its_executable(self):
+        result = self._run()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "https://github.com/rhysd/actionlint/releases/download/v1.7.12/"
+            "actionlint_1.7.12_linux_amd64.tar.gz",
+            self.curl_calls.read_text(),
+        )
+        self.assertIn(
+            "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8",
+            self.checksum_input.read_text(),
+        )
+        executable = Path(
+            self.github_output.read_text().strip().removeprefix("executable=")
+        )
+        version = subprocess.run(
+            [str(executable), "-version"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertEqual(version.stdout.strip(), "actionlint 1.7.12")
+
+    def test_fails_when_release_download_fails(self):
+        result = self._run(curl_fails=True)
+
+        self.assertEqual(result.returncode, 22)
+        self.assertFalse(self.github_output.exists())
+
+    def test_fails_before_extraction_when_release_checksum_is_invalid(self):
+        result = self._run(checksum_fails=True)
+
+        self.assertEqual(result.returncode, 19)
+        self.assertFalse(self.tar_calls.exists())
+        self.assertFalse(self.github_output.exists())
 
 
 if __name__ == "__main__":
