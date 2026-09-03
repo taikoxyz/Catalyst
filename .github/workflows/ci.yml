@@ -28,8 +28,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
       - name: Test E2E workflow helpers
         run: python3 .github/scripts/tests/test_run_shasta_e2e.py -v
+
+      - name: Install actionlint
+        uses: taiki-e/install-action@v2
+        with:
+          tool: actionlint
+
+      - name: Validate GitHub Actions workflows
+        run: actionlint -config-file .github/actionlint.yaml
 
   fmt:
     name: fmt

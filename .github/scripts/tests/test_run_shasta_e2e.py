@@ -106,6 +106,19 @@ fi
         self.assertIn("pytest invocation 1", log_lines)
         self.assertIn("pytest invocation 2", log_lines)
 
+    def test_log_write_failure_fails_the_smoke_gate_when_pytest_succeeds(self):
+        self._write_executable(
+            "tee",
+            """#!/usr/bin/env bash
+cat > /dev/null
+exit 9
+""",
+        )
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 9)
+
 
 class CaptureNethermindE2EDiagnosticsTests(unittest.TestCase):
     def test_collects_relevant_service_logs_without_masking_the_primary_failure(self):

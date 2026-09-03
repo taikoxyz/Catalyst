@@ -133,11 +133,13 @@ jobs:
           timeout=300
           elapsed=0
           while [ $elapsed -lt $timeout ]; do
-            node1_block=$(curl --fail --silent http://localhost:8547 \
+            node1_block=$(curl --fail --silent --connect-timeout 2 --max-time 5 \
+              http://localhost:8547 \
               -X POST -H "Content-Type: application/json" \
               --data '{"jsonrpc":"2.0","id":0,"method":"eth_blockNumber","params":[]}' \
               | jq -r '.result // empty' || true)
-            node2_block=$(curl --fail --silent http://localhost:8647 \
+            node2_block=$(curl --fail --silent --connect-timeout 2 --max-time 5 \
+              http://localhost:8647 \
               -X POST -H "Content-Type: application/json" \
               --data '{"jsonrpc":"2.0","id":0,"method":"eth_blockNumber","params":[]}' \
               | jq -r '.result // empty' || true)
@@ -246,6 +248,7 @@ jobs:
 
       - name: Capture Nethermind E2E diagnostics
         if: failure()
+        timeout-minutes: 5
         working-directory: simple-taiko-node-nethermind
         run: ../.github/scripts/capture-nethermind-e2e-diagnostics.sh
 

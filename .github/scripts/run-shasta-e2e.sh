@@ -20,7 +20,11 @@ readonly smoke_tests=(
 
 run_and_log() {
   "$@" 2>&1 | tee -a "$pytest_log_file"
-  return "${PIPESTATUS[0]}"
+  local -a pipeline_status=("${PIPESTATUS[@]}")
+  if (( pipeline_status[0] != 0 )); then
+    return "${pipeline_status[0]}"
+  fi
+  return "${pipeline_status[1]}"
 }
 
 echo "Running Shasta block-production smoke gate"
