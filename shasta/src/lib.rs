@@ -25,6 +25,7 @@ use config::ShastaConfig;
 use l1::execution_layer::ExecutionLayer;
 use node::Node;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::info;
 
@@ -72,6 +73,29 @@ pub async fn create_shasta_node(
     )
     .await?;
     let taiko = Arc::new(taiko);
+
+    // The basefee sharing percentage is an immutable of the inbox implementation and changes when
+    // the DAO upgrades the inbox proxy. Blocks preconfirmed with a stale value are re-derived by the
+    // driver once proposed, so re-read it every L1 slot instead of requiring a restart.
+    {
+        let ethereum_l1 = ethereum_l1.clone();
+        taiko
+            .get_protocol_config()
+            .spawn_basefee_sharing_pctg_refresh(
+                move || {
+                    let ethereum_l1 = ethereum_l1.clone();
+                    async move {
+                        ethereum_l1
+                            .execution_layer
+                            .fetch_inbox_config()
+                            .await
+                            .map(|inbox_config| inbox_config.basefeeSharingPctg)
+                    }
+                },
+                Duration::from_secs(config.l1_slot_duration_sec),
+                cancel_token.clone(),
+            );
+    }
 
     if shasta_config.max_blocks_to_reanchor
         >= taiko.get_protocol_config().get_timestamp_max_offset()
