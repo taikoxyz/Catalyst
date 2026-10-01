@@ -61,7 +61,7 @@ jobs:
     # without this a broken base image or artifact-copy path reaches master and
     # first surfaces in the publish job.
     if: github.event_name == 'pull_request'
-    runs-on: [arc-runner-set]
+    runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -114,9 +114,9 @@ jobs:
           - name: catalyst-p2p-bootnode
             dockerfile: tools/p2p_boot_node/Dockerfile
         platform:
-          - runner: arc-runner-set
+          - runner: ubuntu-latest
             id: linux/amd64
-          - runner: arc-runner-set-arm64
+          - runner: ubuntu-24.04-arm
             id: linux/arm64
     steps:
       - name: Prepare platform name
@@ -189,7 +189,7 @@ jobs:
     name: publish manifest (${{ matrix.image }})
     if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
     needs: publish
-    runs-on: [arc-runner-set]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
